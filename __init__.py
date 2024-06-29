@@ -113,7 +113,7 @@ class OpExportAnimations(bpy.types.Operator):
 		startframe = bpy.context.scene.frame_start
 		endframe = bpy.context.scene.frame_end
 		bpy.ops.object.mode_set(mode='POSE')
-		bpy.context.scene.frame_current = 0
+		bpy.context.scene.frame_current = startframe
 		bpy.ops.pose.select_all(action="SELECT")
 		if self.export_reference:
 			bpy.ops.pose.blend_with_rest(factor=1.0)
