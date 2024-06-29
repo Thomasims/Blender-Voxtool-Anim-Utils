@@ -3,6 +3,7 @@ import bpy_extras
 import xml.etree.ElementTree as ElementTree
 import mathutils
 import math
+import struct
 
 bl_info = {
 	"name": "VoxTool Animation Utils",
@@ -155,14 +156,74 @@ class OpExportAnimations(bpy.types.Operator):
 		context.window_manager.fileselect_add(self)
 		return {'RUNNING_MODAL'}
 
+class OpExportBonemap(bpy.types.Operator):
+	"""
+	Export VoxTool bonemap
+	"""
+	bl_idname = "armature.voxtoolutils_export_bonemap"
+	bl_label = "Export VoxTool bonemap"
+	bl_options = {'UNDO', 'PRESET'}
+
+	filepath: bpy.props.StringProperty(name="Output path", options={'SKIP_SAVE'}) # type: ignore
+	filename_ext = ".xml"
+	filter_glob: bpy.props.StringProperty(default="*.xml", options={'HIDDEN'}) # type: ignore
+	
+	def execute(self, context):
+		if not self.filepath:
+			return {'CANCELLED'}
+		
+		armature = None
+		for obj in bpy.context.selected_objects:
+			if obj.type != 'ARMATURE': continue
+			armature = obj
+		if armature == None:
+			return {'CANCELLED'}
+
+		with open(self.filepath, "wt") as file:
+			file.write('<bonemap global_offset="-0.5 -0.5 0.5">\n')
+			for bone in armature.data.bones:
+				pos = bone.head_local
+				file.write('<bone rig_name="{name}" name="{name}" offset="{x:.5f} {y:.5f} {z:.5f}"/>\n'.format(name=bone.name, x=pos.x*10, y=pos.y*10, z=pos.z*10))
+			file.write('</bonemap>')
+		
+		with open(self.filepath + '.vox', "wb") as file:
+			file.write(struct.pack("<4si4s2i", b"VOX ", 150, b"MAIN", 0, 0))
+			file.write(struct.pack("<4s5i", b"SIZE", 12, 0, 1, 1, 1))
+			file.write(struct.pack("<4s3i4B", b"XYZI", 8, 0, 1, 0, 0, 0, 1))
+			file.write(struct.pack("<4s9i", b"nTRN", 28, 0, 0, 0, 1, -1, -1, 1, 0))
+			file.write(struct.pack("<4s5i", b"nGRP", 12 + len(armature.data.bones) * 4, 0, 1, 0, len(armature.data.bones)))
+			for i in range(0, len(armature.data.bones)):
+				file.write(struct.pack("<i", i * 2 + 2))
+			for i in range(0, len(armature.data.bones)):
+				bone = armature.data.bones[i]
+				nTRNid = i * 2 + 2
+				file.write(struct.pack("<4s5i5si", b"nTRN", 41 + len(bone.name), 0, nTRNid, 1, 5, b"_name", len(bone.name)))
+				file.write(str.encode(bone.name, encoding="ascii"))
+				file.write(struct.pack("<5i", nTRNid + 1, -1, 0, 1, 0))
+				file.write(struct.pack("<4s7i", b"nSHP", 20, 0, nTRNid + 1, 0, 1, 0, 0))
+			written = file.tell()
+			file.seek(16)
+			file.write(struct.pack("<i", written - 20))
+
+
+		return {"FINISHED"}
+
+	def invoke(self, context, event):
+		if self.filepath:
+			return self.execute(context)
+		context.window_manager.fileselect_add(self)
+		return {'RUNNING_MODAL'}
+
 def menu_func_import(self, context):
     self.layout.operator(OpImportArmature.bl_idname, text="VoxTool Animdata (.xml)")
 def menu_func_export(self, context):
     self.layout.operator(OpExportAnimations.bl_idname, text="VoxTool Animations (.fbx)")
+    self.layout.operator(OpExportBonemap.bl_idname, text="VoxTool Bonemap (.xml)")
 
 classes = (
 	PersistSettings,
 	OpExportAnimations,
+	OpExportBonemap,
 	OpImportArmature
 )
 
