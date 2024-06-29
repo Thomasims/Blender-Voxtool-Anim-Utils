@@ -41,11 +41,6 @@ class action_voxtool_import(bpy.types.Operator, bpy_extras.io_utils.ImportHelper
 		if not self.filepath or not self.filepath.endswith(".xml"):
 			return {'CANCELLED'}
 
-		#with open(self.filepath) as file:
-		#	text_curve = bpy.data.curves.new(type="FONT", name="Text")
-		#	text_curve.body = ''.join(file.readlines())
-		#	text_object = bpy.data.objects.new(name="Text", object_data=text_curve)
-		#	bpy.context.scene.collection.objects.link(text_object)
 		xml = ElementTree.parse(self.filepath)
 		armature_name = xml.getroot().get('name') or 'Armature'
 		armature = bpy.data.armatures.new(armature_name)
@@ -56,16 +51,14 @@ class action_voxtool_import(bpy.types.Operator, bpy_extras.io_utils.ImportHelper
 
 		bone_ref = dict()
 		for bone in xml.findall('skeleton/bone'):
-			pos_raw = [float(v) for v in bone.get('pos').split(' ')]
-			pos = mathutils.Vector((pos_raw[0], pos_raw[1], pos_raw[2])) * 2
+			pos_raw = [float(v) * 2 for v in bone.get('pos').split(' ')]
+			pos = mathutils.Vector((pos_raw[0], pos_raw[1], pos_raw[2]))
 			rot_raw = [float(v) for v in bone.get('rot').split(' ')]
 			rot = mathutils.Quaternion((rot_raw[3], rot_raw[0], rot_raw[1], rot_raw[2]))
+			(axis, angle) = rot.to_axis_angle()
+			mat = mathutils.Matrix.Translation(pos) @ mathutils.Matrix.Rotation(angle, 4, axis)
 			if bone.get('parent') == '-1':
-				rot_fix = mathutils.Euler((math.radians(90),0,0))
-				pos.rotate(rot_fix)
-				rot.rotate(rot_fix)
-				arm_obj.location = pos
-				arm_obj.rotation_quaternion = rot
+				arm_obj.matrix_local = mathutils.Matrix.Rotation(math.radians(90), 4, (1,0,0)) @ mat @ mathutils.Matrix.Rotation(math.radians(-90), 4, (0,0,1))
 				arm_obj.name = bone.get('name')
 				armature.name = bone.get('name')
 				continue
@@ -73,16 +66,14 @@ class action_voxtool_import(bpy.types.Operator, bpy_extras.io_utils.ImportHelper
 			parent = bone_ref[bone.get('parent')] if bone.get('parent') in bone_ref else None
 			if parent != None:
 				bonedata.parent = parent[0]
-				pos.rotate(parent[2])
-				pos = pos + parent[1]
-				rot.rotate(parent[2])
-			bone_ref[bone.get('index')] = (bonedata, pos, rot)
-			print(bone.get('name'), bone.get('index'), bone.get('parent'), pos, rot)
+				mat = parent[1] @ mat
+			else:
+				mat = mathutils.Matrix.Rotation(math.radians(90), 4, (0,0,1)) @ mat
+			bone_ref[bone.get('index')] = (bonedata, mat)
 			
-			bonedata.head = pos.to_tuple()
-			tail = mathutils.Vector((0.1, 0.0, 0.0))
-			tail.rotate(rot)
-			bonedata.tail = (pos + tail).to_tuple()
+			bonedata.length = 0.1
+			bonedata.matrix = mat @ mathutils.Matrix.Rotation(math.radians(90), 4, (0,0,-1))
+		bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 		return {'FINISHED'}
 	
 	def invoke(self, context, event):
