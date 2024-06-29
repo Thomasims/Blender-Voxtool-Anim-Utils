@@ -8,10 +8,10 @@ bl_info = {
 	"name": "VoxTool Animation Utils",
 	"description": "Utilities for importing and exporting VoxTool animation files.",
 	"blender": (2, 80, 0),
-	"category": "Animation",
+	"category": "Import-Export",
 }
 
-class action_voxtool_settings(bpy.types.PropertyGroup):
+class PersistSettings(bpy.types.PropertyGroup):
 	def item_callback(self, context):
 		return [(' ','-','')] + [(a,a,'') for a in bpy.data.actions.keys()]
 	idle_pose: bpy.props.EnumProperty(name="Idle Pose",
@@ -21,21 +21,21 @@ class action_voxtool_settings(bpy.types.PropertyGroup):
 									  options={"ANIMATABLE"},
 									  update=None,
 									  get=None,
-									  set=None)
+									  set=None) # type: ignore
 
 
-class action_voxtool_import(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
+class OpImportArmature(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 	"""
 	Import the armature from an animdata file in XML format
 	"""
-	bl_idname = "armature.voxtool_import"
-	bl_label = "Import Voxtool animdata"
+	bl_idname = "armature.voxtoolutils_import"
+	bl_label = "Import VoxTool animdata"
 	bl_options = {'UNDO', 'PRESET'}
 
-	filepath: bpy.props.StringProperty(subtype='FILE_PATH', options={'SKIP_SAVE'})
+	filepath: bpy.props.StringProperty(subtype='FILE_PATH', options={'SKIP_SAVE'}) # type: ignore
 
 	filename_ext = ".xml"
-	filter_glob: bpy.props.StringProperty(default="*.xml", options={'HIDDEN'})
+	filter_glob: bpy.props.StringProperty(default="*.xml", options={'HIDDEN'}) # type: ignore
 	
 	def execute(self, context):
 		if not self.filepath or not self.filepath.endswith(".xml"):
@@ -83,15 +83,15 @@ class action_voxtool_import(bpy.types.Operator, bpy_extras.io_utils.ImportHelper
 		return {'RUNNING_MODAL'}
 
 
-class action_voxtool_export(bpy.types.Operator):
+class OpExportAnimations(bpy.types.Operator):
 	"""
 	Export all animations to a folder
 	"""
-	bl_idname = "armature.voxtool_export"
+	bl_idname = "armature.voxtoolutils_export"
 	bl_label = "Export Animations"
 	bl_options = {'UNDO', 'PRESET'}
 
-	directory: bpy.props.StringProperty(name="Anim Path", options={'SKIP_SAVE'})
+	directory: bpy.props.StringProperty(name="Anim Path", options={'SKIP_SAVE'}) # type: ignore
 
 	filename_ext = ""
 
@@ -99,7 +99,7 @@ class action_voxtool_export(bpy.types.Operator):
 			name="Export T-Pose",
 			description="Export T-Pose reference file.",
 			default=True,
-			)
+			) # type: ignore
 
 	def draw(self, context):
 		self.layout.prop(self, "export_reference")
@@ -156,20 +156,20 @@ class action_voxtool_export(bpy.types.Operator):
 		return {'RUNNING_MODAL'}
 
 def menu_func_import(self, context):
-    self.layout.operator(action_voxtool_import.bl_idname, text="VoxTool Animdata (.xml)")
+    self.layout.operator(OpImportArmature.bl_idname, text="VoxTool Animdata (.xml)")
 def menu_func_export(self, context):
-    self.layout.operator(action_voxtool_export.bl_idname, text="VoxTool Animations (.fbx)")
+    self.layout.operator(OpExportAnimations.bl_idname, text="VoxTool Animations (.fbx)")
 
 classes = (
-	action_voxtool_settings,
-	action_voxtool_export,
-	action_voxtool_import
+	PersistSettings,
+	OpExportAnimations,
+	OpImportArmature
 )
 
 def register():
 	for cls in classes:
 		bpy.utils.register_class(cls)
-	bpy.types.Scene.voxtoolutils_settings = bpy.props.PointerProperty(type=action_voxtool_settings)
+	bpy.types.Scene.voxtoolutils_settings = bpy.props.PointerProperty(type=PersistSettings)
 	bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 	bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
 
