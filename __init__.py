@@ -180,9 +180,9 @@ class OpExportBonemap(bpy.types.Operator):
 			return {'CANCELLED'}
 
 		with open(self.filepath, "wt") as file:
-			file.write('<bonemap global_offset="-0.5 -0.5 0.5">\n')
+			file.write('<bonemap global_offset="-0.5 -0.5 -0.5">\n')
 			for bone in armature.data.bones:
-				pos = bone.head_local
+				pos = armature.matrix_local @ bone.head_local
 				file.write('<bone rig_name="{name}" name="{name}" offset="{x:.5f} {y:.5f} {z:.5f}"/>\n'.format(name=bone.name, x=pos.x*10, y=pos.y*10, z=pos.z*10))
 			file.write('</bonemap>')
 		
