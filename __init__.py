@@ -37,44 +37,108 @@ class OpImportArmature(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
 	filename_ext = ".xml"
 	filter_glob: bpy.props.StringProperty(default="*.xml", options={'HIDDEN'}) # type: ignore
+
+	use_armature: bpy.props.BoolProperty(name="Import Armature", default=True)
+	use_actions: bpy.props.BoolProperty(name="Import Animations", default=True)
 	
+	def draw(self, context):
+		self.layout.prop(self, "use_armature")
+		self.layout.prop(self, "use_actions")
+
 	def execute(self, context):
 		if not self.filepath or not self.filepath.endswith(".xml"):
 			return {'CANCELLED'}
 
 		xml = ElementTree.parse(self.filepath)
-		armature_name = xml.getroot().get('name') or 'Armature'
-		armature = bpy.data.armatures.new(armature_name)
-		arm_obj = bpy.data.objects.new(armature_name, armature)
-		bpy.context.collection.objects.link(arm_obj)
-		bpy.context.view_layer.objects.active = arm_obj
-		bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
-		bone_ref = dict()
-		for bone in xml.findall('skeleton/bone'):
-			pos_raw = [float(v) * 2 for v in bone.get('pos').split(' ')]
-			pos = mathutils.Vector((pos_raw[0], pos_raw[1], pos_raw[2]))
-			rot_raw = [float(v) for v in bone.get('rot').split(' ')]
-			rot = mathutils.Quaternion((rot_raw[3], rot_raw[0], rot_raw[1], rot_raw[2]))
-			(axis, angle) = rot.to_axis_angle()
-			mat = mathutils.Matrix.Translation(pos) @ mathutils.Matrix.Rotation(angle, 4, axis)
-			if bone.get('parent') == '-1':
-				arm_obj.matrix_local = mathutils.Matrix.Rotation(math.radians(90), 4, (1,0,0)) @ mat @ mathutils.Matrix.Rotation(math.radians(-90), 4, (0,0,1))
-				arm_obj.name = bone.get('name')
-				armature.name = bone.get('name')
-				continue
-			bonedata = armature.edit_bones.new(bone.get('name'))
-			parent = bone_ref[bone.get('parent')] if bone.get('parent') in bone_ref else None
-			if parent != None:
-				bonedata.parent = parent[0]
-				mat = parent[1] @ mat
-			else:
-				mat = mathutils.Matrix.Rotation(math.radians(90), 4, (0,0,1)) @ mat
-			bone_ref[bone.get('index')] = (bonedata, mat)
-			
-			bonedata.length = 0.1
-			bonedata.matrix = mat @ mathutils.Matrix.Rotation(math.radians(90), 4, (0,0,-1))
-		bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+		if self.use_armature:
+			armature_name = xml.getroot().get('name') or 'Armature'
+			armature = bpy.data.armatures.new(armature_name)
+			arm_obj = bpy.data.objects.new(armature_name, armature)
+			arm_obj.rotation_mode = 'QUATERNION'
+			bpy.context.collection.objects.link(arm_obj)
+			bpy.context.view_layer.objects.active = arm_obj
+			bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+
+			bone_ref = dict()
+			for bone in xml.findall('skeleton/bone'):
+				pos_raw = [float(v) * 2 for v in bone.get('pos').split(' ')]
+				rot_raw = [float(v) for v in bone.get('rot').split(' ')]
+				pos = mathutils.Vector((pos_raw[0], pos_raw[1], pos_raw[2]))
+				rot = mathutils.Quaternion((rot_raw[3], rot_raw[0], rot_raw[1], rot_raw[2]))
+				(axis, angle) = rot.to_axis_angle()
+				mat = mathutils.Matrix.Translation(pos) @ mathutils.Matrix.Rotation(angle, 4, axis)
+				if bone.get('parent') == '-1':
+					arm_obj.matrix_local = mathutils.Matrix.Rotation(math.radians(90), 4, (1,0,0)) @ mat @ mathutils.Matrix.Rotation(math.radians(-90), 4, (0,0,1))
+					arm_obj.name = bone.get('name')
+					armature.name = bone.get('name')
+					continue
+				bonedata = armature.edit_bones.new(bone.get('name'))
+				parent = bone_ref[bone.get('parent')] if bone.get('parent') in bone_ref else None
+				base_mat = mat
+				if parent != None:
+					bonedata.parent = parent[0]
+					mat = parent[1] @ mat
+				else:
+					mat = mathutils.Matrix.Rotation(math.radians(90), 4, (0,0,1)) @ mat
+				bone_ref[bone.get('index')] = (bonedata, mat, bone.get('name'), pos, rot.inverted())
+				
+				bonedata.length = 0.1
+				bonedata.matrix = mat @ mathutils.Matrix.Rotation(math.radians(90), 4, (0,0,-1))
+			bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+
+		if self.use_actions:
+			bone_rot_fix = mathutils.Matrix(((0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0))).to_quaternion()
+			scene_framerate = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
+			for anim in xml.findall('animations/animation'):
+				action = bpy.data.actions.new(anim.get('name'))
+				action.use_fake_user = True
+				if not self.use_armature:
+					continue
+				action.use_frame_range = True
+				action.frame_start = 0
+				action.frame_end = 0
+				framerate_adjust = scene_framerate / float(anim.get('anim_rate'))
+				bone_offset = int(anim.get('start_bone'))
+				for sequence in anim.findall('sequence'):
+					bone_index = str(bone_offset + int(sequence.get('bone_index')))
+					if bone_index in bone_ref:
+						bonename = bone_ref[bone_index][2]
+						location_data_path = f'pose.bones["{bonename}"].location'
+						rotation_data_path = f'pose.bones["{bonename}"].rotation_quaternion'
+						bone_pos = bone_ref[bone_index][3]
+						bone_rot = bone_ref[bone_index][4]
+						rot_fix = mathutils.Quaternion()
+					else:
+						location_data_path = 'location'
+						rotation_data_path = 'rotation_quaternion'
+						bone_pos = mathutils.Vector((0, 0, 0))
+						bone_rot = mathutils.Quaternion()
+						rot_fix = bone_rot_fix
+					fcurve_location_x = action.fcurves.new(location_data_path, index = 0)
+					fcurve_location_y = action.fcurves.new(location_data_path, index = 1)
+					fcurve_location_z = action.fcurves.new(location_data_path, index = 2)
+					fcurve_quat_w = action.fcurves.new(rotation_data_path, index = 0)
+					fcurve_quat_x = action.fcurves.new(rotation_data_path, index = 1)
+					fcurve_quat_y = action.fcurves.new(rotation_data_path, index = 2)
+					fcurve_quat_z = action.fcurves.new(rotation_data_path, index = 3)
+					for keyframe in sequence.findall('keyframe'):
+						pos_raw = [float(v) * 2 for v in keyframe.get('pos').split(' ')]
+						rot_raw = [float(v) for v in keyframe.get('rot').split(' ')]
+						pos = rot_fix @ (mathutils.Vector((pos_raw[0], pos_raw[1], pos_raw[2])) - bone_pos)
+						rot = rot_fix @ (bone_rot @ mathutils.Quaternion((rot_raw[3], rot_raw[0], rot_raw[1], rot_raw[2])))
+						frame = float(keyframe.get('time')) * scene_framerate
+						if frame > action.frame_end:
+							action.frame_end = frame
+						fcurve_location_x.keyframe_points.insert(frame, -pos[1], options = {'FAST'}).interpolation = 'LINEAR'
+						fcurve_location_y.keyframe_points.insert(frame, pos[0], options = {'FAST'}).interpolation = 'LINEAR'
+						fcurve_location_z.keyframe_points.insert(frame, pos[2], options = {'FAST'}).interpolation = 'LINEAR'
+						fcurve_quat_w.keyframe_points.insert(frame, rot[0], options = {'FAST'}).interpolation = 'LINEAR'
+						fcurve_quat_x.keyframe_points.insert(frame, -rot[2], options = {'FAST'}).interpolation = 'LINEAR'
+						fcurve_quat_y.keyframe_points.insert(frame, rot[1], options = {'FAST'}).interpolation = 'LINEAR'
+						fcurve_quat_z.keyframe_points.insert(frame, rot[3], options = {'FAST'}).interpolation = 'LINEAR'
+
+
 		return {'FINISHED'}
 	
 	def invoke(self, context, event):

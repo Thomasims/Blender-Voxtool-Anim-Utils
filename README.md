@@ -19,6 +19,10 @@ Using these files in VoxTool's animation tab rather than hand-crafted counterpar
 You can then modify this generated prefab in the in-game editor using the voxels as reference points.
 
 ### Animdata Import (`File > Import > VoxTool Animdata (.xml)`)
-This tool lets you extract the armature (TODO: extract animations) from an Animdata file in XML format.
+This tool lets you extract the armature and animations from an Animdata file in XML format.
 
 This is generally only useful if you're attempting to modify someone else's animation files where you don't have access to the source files.
+
+*Note: Make sure to set your scene framerate before importing for best results.*
+
+*Note: Imported animations are not guaranteed to re-import 1 to 1, they should only be used as reference.*
