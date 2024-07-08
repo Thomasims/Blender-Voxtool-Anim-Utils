@@ -54,6 +54,8 @@ class OpImportArmature(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 	use_armature: bpy.props.BoolProperty(name="Import Armature", default=True)
 	use_actions: bpy.props.BoolProperty(name="Import Animations", default=True)
 	replace_actions: bpy.props.BoolProperty(name="Replace existing actions", default=True)
+	set_fake_user: bpy.props.BoolProperty(name="Set fake user", default=True)
+	action_prefix: bpy.props.StringProperty(name="Additional action prefix", default="")
 	adjust_framerate: bpy.props.BoolProperty(name="Adjust framerate to scene FPS", default=True)
 	voxel_scale: bpy.props.FloatProperty(name="Voxel scale", default=0.5)
 	
@@ -62,6 +64,9 @@ class OpImportArmature(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 		self.layout.prop(self, "use_actions")
 		self.layout.separator()
 		self.layout.prop(self, "replace_actions")
+		self.layout.prop(self, "set_fake_user")
+		self.layout.prop(self, "action_prefix")
+		self.layout.separator()
 		self.layout.prop(self, "adjust_framerate")
 		self.layout.prop(self, "voxel_scale")
 
@@ -107,9 +112,10 @@ class OpImportArmature(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 			bone_rot_fix = mathutils.Matrix(((0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0))).to_quaternion()
 			scene_framerate = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
 			for anim in xml.findall('animations/animation'):
-				action_name = anim.get('name')
+				action_name = self.action_prefix + anim.get('name')
 				action = self.replace_actions and bpy.data.actions.get(action_name) or bpy.data.actions.new(action_name)
-				action.use_fake_user = True
+				if self.set_fake_user:
+					action.use_fake_user = True
 				if not self.use_armature:
 					continue
 				action.use_frame_range = True
